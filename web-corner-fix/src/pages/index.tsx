@@ -75,7 +75,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
       {/* Header */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm border-b">
+      <header className="bg-white dark:bg-slate-800 shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -95,7 +95,7 @@ export default function Home() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* File List */}
           <div className="lg:col-span-1">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border">
               <div className="p-4 border-b">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Files in Public Folder
@@ -109,7 +109,7 @@ export default function Home() {
                       className={`flex items-center p-3 rounded-lg cursor-pointer transition-colors ${
                         selectedFile === file.name
                           ? 'bg-blue-100 dark:bg-blue-900 border-blue-300'
-                          : 'hover:bg-gray-50 dark:hover:bg-gray-700'
+                          : 'hover:bg-gray-50 dark:hover:bg-slate-700'
                       }`}
                       onClick={() => setSelectedFile(file.name)}
                     >
@@ -131,7 +131,7 @@ export default function Home() {
 
           {/* Media Viewer */}
           <div className="lg:col-span-2">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border">
               <div className="p-4 border-b">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Media Viewer
@@ -139,7 +139,7 @@ export default function Home() {
               </div>
               <div className="p-4">
                 {/* Media Display Area */}
-                <div className={`bg-gray-100 dark:bg-gray-700 rounded-lg mb-4 flex items-center justify-center ${
+                <div className={`bg-gray-100 dark:bg-gray-800 rounded-lg mb-4 flex items-center justify-center ${
                   isFullscreen ? 'fixed inset-0 z-50 bg-black' : 'h-96'
                 }`}>
                   {selectedFile ? (
@@ -247,7 +247,7 @@ export default function Home() {
 
                 {/* File Info */}
                 {selectedFile && (
-                  <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div className="mt-6 p-4 bg-gray-50 dark:bg-slate-700 rounded-lg">
                     <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
                       File Information
                     </h3>

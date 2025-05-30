@@ -1,0 +1,3 @@
+Команда для запуска ```uvicorn main:app --reload```
+
+Команда для установки библиотек: ```pip install -r requirements.txt```

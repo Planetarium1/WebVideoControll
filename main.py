@@ -118,10 +118,26 @@ def mjpeg_streamer() -> Generator[bytes, None, None]:
             [current_settings.bottomRight.x, current_settings.bottomRight.y],
             [current_settings.bottomLeft.x, current_settings.bottomLeft.y],
         ])
-        M = cv2.getPerspectiveTransform(src, dst)
+        
+        # Вычисляем границы трансформированного изображения
+        min_x = int(min(dst[:, 0]))
+        max_x = int(max(dst[:, 0]))
+        min_y = int(min(dst[:, 1]))
+        max_y = int(max(dst[:, 1]))
+        
+        # Определяем размер выходного изображения
+        output_width = max_x - min_x
+        output_height = max_y - min_y
+        
+        # Корректируем точки назначения с учетом смещения
+        dst_corrected = dst.copy()
+        dst_corrected[:, 0] -= min_x
+        dst_corrected[:, 1] -= min_y
+        
+        M = cv2.getPerspectiveTransform(src, dst_corrected)
 
-        # Перспективная коррекция
-        warped = cv2.warpPerspective(frame, M, (w, h))
+        # Перспективная коррекция с правильным размером
+        warped = cv2.warpPerspective(frame, M, (output_width, output_height))
 
         # Применяем цветокоррекцию
         warped = apply_color_correction(
@@ -131,11 +147,10 @@ def mjpeg_streamer() -> Generator[bytes, None, None]:
             current_settings.saturation
         )
 
-        # Масштаб и поворот
-        center = (w // 2, h // 2)
+        # Масштаб и поворот относительно центра нового изображения
+        center = (output_width // 2, output_height // 2)
         rot_mat = cv2.getRotationMatrix2D(center, current_settings.rotation, 1)
-                                        #   , current_settings.scale / 100.0
-        warped = cv2.warpAffine(warped, rot_mat, (w, h))
+        warped = cv2.warpAffine(warped, rot_mat, (output_width, output_height))
 
         ret, buffer = cv2.imencode('.jpg', warped)
         if not ret:

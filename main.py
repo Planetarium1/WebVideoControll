@@ -2,11 +2,13 @@ import cv2
 import threading
 import time
 import numpy as np
+import json
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Generator
+from contextlib import asynccontextmanager
 
 origins = [
     "http://localhost.tiangolo.com",
@@ -14,16 +16,6 @@ origins = [
     "http://localhost",
     "http://localhost:3000",
 ]
-
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 VIDEO_PATH = "test-video.mov"
 
@@ -54,18 +46,24 @@ class TransformSettings(BaseModel):
     rotation: float    # в градусах
     # scale: float       # в процентах
 
-current_settings: TransformSettings = TransformSettings(
-    topLeft=CornerPoint(x=50, y=50),
-    topRight=CornerPoint(x=350, y=50),
-    bottomRight=CornerPoint(x=350, y=250),
-    bottomLeft=CornerPoint(x=50, y=250),
-    brightness=100, contrast=100, saturation=100, rotation=0, 
-    # scale=100
-)
+with open("settings.json", "r") as f:
+    settings = json.load(f)
+    current_settings = TransformSettings(
+        topLeft=CornerPoint(x=settings["topLeft"]["x"], y=settings["topLeft"]["y"]),
+        topRight=CornerPoint(x=settings["topRight"]["x"], y=settings["topRight"]["y"]),
+        bottomRight=CornerPoint(x=settings["bottomRight"]["x"], y=settings["bottomRight"]["y"]),
+        bottomLeft=CornerPoint(x=settings["bottomLeft"]["x"], y=settings["bottomLeft"]["y"]),
+        brightness=settings["brightness"],
+        contrast=settings["contrast"],
+        saturation=settings["saturation"],
+        rotation=settings["rotation"],
+    )
 
-def video_loop():
+def video_loop(stop_thread):
     global latest_frame
-    while True:
+    while True: 
+        if stop_thread():
+            break
         cap = cv2.VideoCapture(VIDEO_PATH)
         if not cap.isOpened():
             print("Error: Unable to open video file.")
@@ -80,16 +78,42 @@ def video_loop():
             time.sleep(1/30)
         cap.release()
 
-@app.on_event("startup")
-def start_video_thread():
-    thread = threading.Thread(target=video_loop, daemon=True)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    stop_thread = False
+    thread = threading.Thread(target=video_loop, daemon=True, args=(lambda: stop_thread,)) 
     thread.start()
+    yield
+    stop_thread = True
+    thread.join()
+
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# @app.on_event("startup")
+# def start_video_thread():
+#     thread = threading.Thread(target=video_loop, daemon=True)
+#     thread.start()
+
+@app.get("/settings")
+def get_settings():
+    return current_settings.model_dump()
 
 @app.post("/settings")
 def update_settings(settings: TransformSettings):
     """Обновление текущих параметров трансформации."""
     global current_settings
     current_settings = settings
+    with open("settings.json", "w") as f:
+        json.dump(settings.model_dump(), f)
     return {"status": "ok"}
 
 def apply_color_correction(img: np.ndarray, b: float, c: float, s: float) -> np.ndarray:

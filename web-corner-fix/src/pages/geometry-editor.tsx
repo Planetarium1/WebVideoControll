@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import * as PIXI from "pixi.js";
 
 interface CornerPoint {
   x: number;
@@ -19,269 +18,6 @@ interface GeometrySettings {
   scale: number;
 }
 
-function PixiPreview({
-  imageSrc,
-  geometry,
-  width = 400,
-  height = 300,
-}: {
-  imageSrc: string | null;
-  geometry: GeometrySettings;
-  width?: number;
-  height?: number;
-}) {
-  const pixiContainerRef = useRef<HTMLDivElement>(null);
-  const pixiAppRef = useRef<PIXI.Application | null>(null);
-  const containerRef = useRef<PIXI.Container | null>(null);
-  const isInitializedRef = useRef<boolean>(false);
-
-  // Функция для вычисления перспективной трансформации
-  const calculatePerspectiveTransform = (
-    corners: {
-      topLeft: { x: number; y: number };
-      topRight: { x: number; y: number };
-      bottomLeft: { x: number; y: number };
-      bottomRight: { x: number; y: number };
-    },
-    imageWidth: number,
-    imageHeight: number
-  ) => {
-    // Исходные координаты изображения (прямоугольник)
-    const src = [
-      0,
-      0, // top-left
-      imageWidth,
-      0, // top-right
-      imageWidth,
-      imageHeight, // bottom-right
-      0,
-      imageHeight, // bottom-left
-    ];
-
-    // Целевые координаты (четырехугольник)
-    const dst = [
-      corners.topLeft.x,
-      corners.topLeft.y,
-      corners.topRight.x,
-      corners.topRight.y,
-      corners.bottomRight.x,
-      corners.bottomRight.y,
-      corners.bottomLeft.x,
-      corners.bottomLeft.y,
-    ];
-
-    // Вычисляем матрицу перспективной трансформации
-    const matrix = getPerspectiveTransform(src, dst);
-    return matrix;
-  };
-
-  // Функция для получения матрицы перспективной трансформации
-  const getPerspectiveTransform = (src: number[], dst: number[]): number[] => {
-    const A = [];
-    const b = [];
-
-    for (let i = 0; i < 4; i++) {
-      const sx = src[i * 2];
-      const sy = src[i * 2 + 1];
-      const dx = dst[i * 2];
-      const dy = dst[i * 2 + 1];
-
-      A.push([sx, sy, 1, 0, 0, 0, -dx * sx, -dx * sy]);
-      A.push([0, 0, 0, sx, sy, 1, -dy * sx, -dy * sy]);
-      b.push(dx, dy);
-    }
-
-    // Решение системы линейных уравнений
-    const h = solve(A, b);
-    h.push(1);
-
-    return h;
-  };
-
-  // Простое решение системы линейных уравнений методом Гаусса
-  const solve = (A: number[][], b: number[]): number[] => {
-    const n = A.length;
-    const augmented = A.map((row, i) => [...row, b[i]]);
-
-    // Прямой ход
-    for (let i = 0; i < n; i++) {
-      let maxRow = i;
-      for (let k = i + 1; k < n; k++) {
-        if (Math.abs(augmented[k][i]) > Math.abs(augmented[maxRow][i])) {
-          maxRow = k;
-        }
-      }
-      [augmented[i], augmented[maxRow]] = [augmented[maxRow], augmented[i]];
-
-      for (let k = i + 1; k < n; k++) {
-        const factor = augmented[k][i] / augmented[i][i];
-        for (let j = i; j <= n; j++) {
-          augmented[k][j] -= factor * augmented[i][j];
-        }
-      }
-    }
-
-    // Обратный ход
-    const x = new Array(n);
-    for (let i = n - 1; i >= 0; i--) {
-      x[i] = augmented[i][n];
-      for (let j = i + 1; j < n; j++) {
-        x[i] -= augmented[i][j] * x[j];
-      }
-      x[i] /= augmented[i][i];
-    }
-
-    return x;
-  };
-
-  useEffect(() => {
-    if (!pixiContainerRef.current || !imageSrc) return;
-
-    let isMounted = true;
-
-    // Initialize Pixi application
-    const app = new PIXI.Application();
-    pixiAppRef.current = app;
-
-    const initializePixi = async () => {
-      try {
-        await app.init({
-          width,
-          height,
-          backgroundColor: 0xf3f4f6,
-          antialias: true,
-        });
-
-        // Check if component is still mounted
-        if (!isMounted || !pixiContainerRef.current) return;
-
-        pixiContainerRef.current.appendChild(app.canvas);
-        isInitializedRef.current = true;
-
-        // Load texture
-        const texture = await PIXI.Assets.load(imageSrc);
-
-        // Check again if still mounted
-        if (!isMounted) return;
-
-        // Create container
-        const container = new PIXI.Container();
-        containerRef.current = container;
-
-        // Create sprite
-        const sprite = new PIXI.Sprite(texture);
-        container.addChild(sprite);
-
-        app.stage.addChild(container);
-        updatePerspectiveTransform();
-      } catch (error) {
-        console.error("Failed to initialize Pixi.js:", error);
-      }
-    };
-
-    initializePixi();
-
-    return () => {
-      isMounted = false;
-      if (pixiAppRef.current && isInitializedRef.current) {
-        try {
-          pixiAppRef.current.destroy(true);
-        } catch (error) {
-          console.error("Error destroying Pixi app:", error);
-        }
-      }
-      pixiAppRef.current = null;
-      containerRef.current = null;
-      isInitializedRef.current = false;
-    };
-  }, [imageSrc, width, height]);
-
-  const updatePerspectiveTransform = () => {
-    if (
-      !containerRef.current ||
-      !pixiAppRef.current ||
-      !isInitializedRef.current
-    )
-      return;
-
-    try {
-      const container = containerRef.current;
-      const sprite = container.children[0] as PIXI.Sprite;
-      const {
-        topLeft,
-        topRight,
-        bottomLeft,
-        bottomRight,
-        brightness,
-        contrast,
-        saturation,
-        rotation,
-        scale,
-      } = geometry;
-
-      // Scale coordinates to fit preview canvas
-      const scaleX = width / 400;
-      const scaleY = height / 300;
-
-      // Scaled corner positions
-      const corners = {
-        topLeft: { x: topLeft.x * scaleX, y: topLeft.y * scaleY },
-        topRight: { x: topRight.x * scaleX, y: topRight.y * scaleY },
-        bottomLeft: { x: bottomLeft.x * scaleX, y: bottomLeft.y * scaleY },
-        bottomRight: { x: bottomRight.x * scaleX, y: bottomRight.y * scaleY },
-      };
-
-      // Set sprite size
-      const spriteWidth = 200;
-      const spriteHeight = 150;
-      sprite.width = spriteWidth;
-      sprite.height = spriteHeight;
-
-      // Calculate perspective transform matrix
-      const matrix = calculatePerspectiveTransform(
-        corners,
-        spriteWidth,
-        spriteHeight
-      );
-
-      // Apply the transform matrix to the sprite
-      // PIXI uses a 2D transform matrix, so we need to approximate the perspective effect
-      const transform = new PIXI.Matrix();
-
-      // Extract the 2D affine part from the perspective matrix
-      transform.a = matrix[0]; // scale x
-      transform.b = matrix[3]; // skew y
-      transform.c = matrix[1]; // skew x
-      transform.d = matrix[4]; // scale y
-      transform.tx = matrix[2]; // translate x
-      transform.ty = matrix[5]; // translate y
-
-      // Apply transform
-      sprite.setFromMatrix(transform);
-
-      // Apply additional transformations
-      container.scale.set(scale / 100);
-      container.angle = rotation * (Math.PI / 180);
-
-      // Apply color filters
-      const colorMatrix = new PIXI.ColorMatrixFilter();
-      colorMatrix.brightness(brightness / 100, false);
-      colorMatrix.contrast(contrast / 100, false);
-      colorMatrix.saturate(saturation / 100, false);
-
-      container.filters = [colorMatrix];
-    } catch (error) {
-      console.error("Error updating perspective:", error);
-    }
-  };
-
-  useEffect(() => {
-    updatePerspectiveTransform();
-  }, [geometry]);
-
-  return <div ref={pixiContainerRef} className="rounded-lg overflow-hidden" />;
-}
-
 export default function GeometryEditor() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -290,6 +26,7 @@ export default function GeometryEditor() {
   const [showPreview, setShowPreview] = useState(true);
 
   const [availableImages, setAvailableImages] = useState<string[]>([]);
+  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
 
   const [geometry, setGeometry] = useState<GeometrySettings>({
     topLeft: { x: 50, y: 50 },
@@ -302,6 +39,57 @@ export default function GeometryEditor() {
     rotation: 0,
     scale: 100,
   });
+
+  // Загрузка текущих настроек при инициализации компонента
+  useEffect(() => {
+    const fetchCurrentSettings = async () => {
+      try {
+        const response = await fetch("http://localhost:8000/settings");
+        if (response.ok) {
+          const currentSettings = await response.json();
+          setGeometry(currentSettings);
+        }
+      } catch (error) {
+        console.error("Failed to fetch current settings:", error);
+      } finally {
+        setIsSettingsLoaded(true);
+      }
+    };
+
+    fetchCurrentSettings();
+  }, []);
+
+  // Функция для отправки настроек на сервер
+  const updateSettingsOnServer = async (newGeometry: GeometrySettings) => {
+    try {
+      await fetch("http://localhost:8000/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newGeometry),
+      });
+    } catch (error) {
+      console.error("Failed to update settings:", error);
+    }
+  };
+
+  // Обновленная функция setGeometry с отправкой на сервер
+  const updateGeometry = (
+    updates:
+      | Partial<GeometrySettings>
+      | ((prev: GeometrySettings) => GeometrySettings)
+  ) => {
+    setGeometry((prev) => {
+      const newGeometry =
+        typeof updates === "function" ? updates(prev) : { ...prev, ...updates };
+
+      // Отправляем настройки на сервер только если они уже были загружены
+      if (isSettingsLoaded) {
+        updateSettingsOnServer(newGeometry);
+      }
+
+      return newGeometry;
+    });
+  };
 
   useEffect(() => {
     const fetchImages = async () => {
@@ -435,7 +223,7 @@ export default function GeometryEditor() {
     const x = Math.max(0, Math.min(canvas.width, e.clientX - rect.left));
     const y = Math.max(0, Math.min(canvas.height, e.clientY - rect.top));
 
-    setGeometry((prev) => ({
+    updateGeometry((prev) => ({
       ...prev,
       [isDragging]: { x, y },
     }));
@@ -446,7 +234,7 @@ export default function GeometryEditor() {
   };
 
   const resetGeometry = () => {
-    setGeometry({
+    updateGeometry({
       topLeft: { x: 50, y: 50 },
       topRight: { x: 350, y: 50 },
       bottomLeft: { x: 50, y: 250 },
@@ -458,14 +246,6 @@ export default function GeometryEditor() {
       scale: 100,
     });
   };
-
-  useEffect(() => {
-    fetch("http://localhost:8000/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(geometry),
-    }).catch(console.error);
-  }, [geometry]);
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
@@ -530,7 +310,7 @@ export default function GeometryEditor() {
                           type="number"
                           value={Math.round(point.x)}
                           onChange={(e) =>
-                            setGeometry((prev) => ({
+                            updateGeometry((prev) => ({
                               ...prev,
                               [corner]: {
                                 ...(prev[
@@ -551,7 +331,7 @@ export default function GeometryEditor() {
                           type="number"
                           value={Math.round(point.y)}
                           onChange={(e) =>
-                            setGeometry((prev) => ({
+                            updateGeometry((prev) => ({
                               ...prev,
                               [corner]: {
                                 ...(prev[
@@ -585,10 +365,9 @@ export default function GeometryEditor() {
                     max="200"
                     value={geometry.brightness}
                     onChange={(e) =>
-                      setGeometry((prev) => ({
-                        ...prev,
+                      updateGeometry({
                         brightness: Number(e.target.value),
-                      }))
+                      })
                     }
                     className="w-full"
                   />
@@ -604,10 +383,9 @@ export default function GeometryEditor() {
                     max="200"
                     value={geometry.contrast}
                     onChange={(e) =>
-                      setGeometry((prev) => ({
-                        ...prev,
+                      updateGeometry({
                         contrast: Number(e.target.value),
-                      }))
+                      })
                     }
                     className="w-full"
                   />
@@ -623,10 +401,9 @@ export default function GeometryEditor() {
                     max="200"
                     value={geometry.saturation}
                     onChange={(e) =>
-                      setGeometry((prev) => ({
-                        ...prev,
+                      updateGeometry({
                         saturation: Number(e.target.value),
-                      }))
+                      })
                     }
                     className="w-full"
                   />
@@ -642,10 +419,9 @@ export default function GeometryEditor() {
                     max="180"
                     value={geometry.rotation}
                     onChange={(e) =>
-                      setGeometry((prev) => ({
-                        ...prev,
+                      updateGeometry({
                         rotation: Number(e.target.value),
-                      }))
+                      })
                     }
                     className="w-full"
                   />
@@ -661,10 +437,9 @@ export default function GeometryEditor() {
                     max="200"
                     value={geometry.scale}
                     onChange={(e) =>
-                      setGeometry((prev) => ({
-                        ...prev,
+                      updateGeometry({
                         scale: Number(e.target.value),
-                      }))
+                      })
                     }
                     className="w-full"
                   />

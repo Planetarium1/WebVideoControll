@@ -7,6 +7,7 @@ interface CornerPoint {
 }
 
 interface GeometrySettings {
+  videoName: string;
   topLeft: CornerPoint;
   topRight: CornerPoint;
   bottomLeft: CornerPoint;
@@ -20,7 +21,6 @@ interface GeometrySettings {
 
 export default function GeometryEditor() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState<string | null>(null);
   const [showGrid, setShowGrid] = useState(true);
   const [showPreview, setShowPreview] = useState(true);
@@ -29,6 +29,7 @@ export default function GeometryEditor() {
   const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
 
   const [geometry, setGeometry] = useState<GeometrySettings>({
+    videoName: "",
     topLeft: { x: 50, y: 50 },
     topRight: { x: 350, y: 50 },
     bottomLeft: { x: 50, y: 250 },
@@ -93,16 +94,17 @@ export default function GeometryEditor() {
 
   useEffect(() => {
     const fetchImages = async () => {
-      const response = await fetch("/api/files");
+      const response = await fetch("http://localhost:8000/video-list");
       const data = await response.json();
-      setAvailableImages(data.files.map((file: { name: string }) => file.name));
+      console.log(data);
+      setAvailableImages(data.videos);
     };
     fetchImages();
   }, []);
 
   useEffect(() => {
     drawCanvas();
-  }, [geometry, selectedImage, showGrid]);
+  }, [geometry, geometry.videoName, showGrid]);
 
   const drawCanvas = () => {
     const canvas = canvasRef.current;
@@ -247,6 +249,16 @@ export default function GeometryEditor() {
     });
   };
 
+  useEffect(() => {
+    if (!!geometry.videoName) {
+      console.log(
+        `Video from settings is in availableImages: ${
+          availableImages.filter((e) => e === geometry.videoName).length > 0
+        }`
+      );
+    }
+  }, [geometry.videoName]);
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
       {/* Header */}
@@ -279,14 +291,19 @@ export default function GeometryEditor() {
                 {availableImages.map((image) => (
                   <button
                     key={image}
-                    onClick={() => setSelectedImage(image)}
-                    className={`w-full p-3 text-left rounded-lg border transition-colors ${
-                      selectedImage === image
-                        ? "bg-blue-50 border-blue-300 text-blue-900"
+                    onClick={() =>
+                      updateGeometry((prev) => ({ ...prev, videoName: image }))
+                    }
+                    className={`w-full flex justify-between p-3 text-left rounded-lg border transition-colors ${
+                      geometry.videoName === image
+                        ? "bg-green-50 border-green-300 text-red-900"
                         : "bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100"
                     }`}
                   >
-                    {image.replace("/", "")}
+                    <p>{image.replace("/", "")}</p>
+                    {geometry.videoName === image && (
+                      <p className="text-green-500">selected</p>
+                    )}
                   </button>
                 ))}
               </div>
@@ -299,7 +316,7 @@ export default function GeometryEditor() {
               </h3>
               <div className="space-y-4">
                 {Object.entries(geometry)
-                  .slice(0, 4)
+                  .slice(1, 5)
                   .map(([corner, point]) => (
                     <div key={corner} className="grid grid-cols-2 gap-3">
                       <div>
@@ -545,7 +562,7 @@ export default function GeometryEditor() {
             )}
 
             {/* Show message when no image selected */}
-            {showPreview && !selectedImage && (
+            {showPreview && !geometry.videoName && (
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border p-6">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                   Live Preview

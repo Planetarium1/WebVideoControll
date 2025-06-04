@@ -9,33 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Generator
 from contextlib import asynccontextmanager
+import os
 
-origins = [
-    "http://localhost.tiangolo.com",
-    "https://localhost.tiangolo.com",
-    "http://localhost",
-    "http://localhost:3000",
-]
-
-VIDEO_PATH = "test-video.mov"
-
-# Получаем исходное разрешение видео при старте
-cap = cv2.VideoCapture(VIDEO_PATH)
-if not cap.isOpened():
-    raise RuntimeError(f"Cannot open video: {VIDEO_PATH}")
-ORIG_WIDTH = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-ORIG_HEIGHT = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-cap.release()
-print(f"Native video size: {ORIG_WIDTH}×{ORIG_HEIGHT}")
-
-latest_frame = None
-
-# Глобальные текущие настройки трансформации
 class CornerPoint(BaseModel):
     x: float
     y: float
 
 class TransformSettings(BaseModel):
+    videoName: str
     topLeft: CornerPoint
     topRight: CornerPoint
     bottomRight: CornerPoint
@@ -49,6 +30,7 @@ class TransformSettings(BaseModel):
 with open("settings.json", "r") as f:
     settings = json.load(f)
     current_settings = TransformSettings(
+        videoName=settings["videoName"],
         topLeft=CornerPoint(x=settings["topLeft"]["x"], y=settings["topLeft"]["y"]),
         topRight=CornerPoint(x=settings["topRight"]["x"], y=settings["topRight"]["y"]),
         bottomRight=CornerPoint(x=settings["bottomRight"]["x"], y=settings["bottomRight"]["y"]),
@@ -59,25 +41,69 @@ with open("settings.json", "r") as f:
         rotation=settings["rotation"],
     )
 
+origins = [
+    "http://localhost.tiangolo.com",
+    "https://localhost.tiangolo.com",
+    "http://localhost",
+    "http://localhost:3000",
+]
+
+# Получаем исходное разрешение видео при старте
+cap = cv2.VideoCapture(f"./videos/{current_settings.videoName}")
+if not cap.isOpened():
+    raise RuntimeError(f"Cannot open video: {current_settings.videoName}")
+ORIG_WIDTH = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+ORIG_HEIGHT = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+cap.release()
+print(f"Native video size: {ORIG_WIDTH}×{ORIG_HEIGHT}")
+
+latest_frame = None
+video_restart_event = threading.Event()
+
+# Глобальные текущие настройки трансформации
+
 def video_loop(stop_thread):
-    global latest_frame
+    global latest_frame, current_settings, ORIG_WIDTH, ORIG_HEIGHT
+    current_video_name = current_settings.videoName
+    
     while True: 
         if stop_thread():
             break
-        cap = cv2.VideoCapture(VIDEO_PATH)
+            
+        # Проверяем, нужно ли перезапустить видео
+        if video_restart_event.is_set() or current_video_name != current_settings.videoName:
+            current_video_name = current_settings.videoName
+            video_restart_event.clear()
+            print(f"Switching to video: {current_video_name}")
+            
+            # Обновляем размеры для нового видео
+            cap_temp = cv2.VideoCapture(f"./videos/{current_video_name}")
+            if cap_temp.isOpened():
+                ORIG_WIDTH = int(cap_temp.get(cv2.CAP_PROP_FRAME_WIDTH))
+                ORIG_HEIGHT = int(cap_temp.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                cap_temp.release()
+                print(f"New video size: {ORIG_WIDTH}×{ORIG_HEIGHT}")
+        
+        cap = cv2.VideoCapture(f"./videos/{current_video_name}")
         if not cap.isOpened():
-            print("Error: Unable to open video file.")
+            print(f"Error: Unable to open video file: {current_video_name}")
             time.sleep(1)
             continue
 
         while True:
+            # Проверяем, нужно ли сменить видео
+            if current_video_name != current_settings.videoName or video_restart_event.is_set():
+                break
+                
+            if stop_thread():
+                break
+                
             success, frame = cap.read()
             if not success:
                 break
             latest_frame = frame
             time.sleep(1/30)
         cap.release()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -111,9 +137,18 @@ def get_settings():
 def update_settings(settings: TransformSettings):
     """Обновление текущих параметров трансформации."""
     global current_settings
+    
+    # Проверяем, изменилось ли название видео
+    video_changed = current_settings.videoName != settings.videoName
+    
     current_settings = settings
     with open("settings.json", "w") as f:
         json.dump(settings.model_dump(), f)
+    
+    # Если видео изменилось, сигнализируем о необходимости перезапуска
+    if video_changed:
+        video_restart_event.set()
+    
     return {"status": "ok"}
 
 def apply_color_correction(img: np.ndarray, b: float, c: float, s: float) -> np.ndarray:
@@ -192,3 +227,7 @@ def video_feed():
         mjpeg_streamer(),
         media_type='multipart/x-mixed-replace; boundary=frame'
     )
+
+@app.get("/video-list")
+def video_list():
+    return {"videos": os.listdir("./videos")}

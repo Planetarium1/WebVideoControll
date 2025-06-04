@@ -1,1 +1,1 @@
-{"topLeft": {"x": 50.0, "y": 50.0}, "topRight": {"x": 350.0, "y": 50.0}, "bottomRight": {"x": 350.0, "y": 250.0}, "bottomLeft": {"x": 50.0, "y": 250.0}, "brightness": 100.0, "contrast": 100.0, "saturation": 100.0, "rotation": 0.0}
+{"videoName": "test-video.mov", "topLeft": {"x": 50.0, "y": 50.0}, "topRight": {"x": 350.0, "y": 50.0}, "bottomRight": {"x": 350.0, "y": 250.0}, "bottomLeft": {"x": 50.0, "y": 250.0}, "brightness": 100.0, "contrast": 100.0, "saturation": 100.0, "rotation": 0.0}
